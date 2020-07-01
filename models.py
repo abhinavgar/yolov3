@@ -209,6 +209,8 @@ class YOLOLayer(nn.Module):
 
         else:  # inference
             io = p.clone()  # inference output
+            if not hasattr(self, 'grid'):
+                self.create_grids((nx, ny), p.device)
             io[..., :2] = torch.sigmoid(io[..., :2]) + self.grid  # xy
             io[..., 2:4] = torch.exp(io[..., 2:4]) * self.anchor_wh  # wh yolo method
             io[..., :4] *= self.stride
@@ -310,7 +312,7 @@ class Darknet(nn.Module):
                 x[1][..., 0] = img_size[1] - x[1][..., 0]  # flip lr
                 x[2][..., :4] /= s[1]  # scale
                 x = torch.cat(x, 1)
-            return x, p
+            return x, p, out
 
     def fuse(self):
         # Fuse Conv2d + BatchNorm2d layers throughout model

@@ -76,7 +76,7 @@ def train(hyp):
     img_size = imgsz_max  # initialize with max size
 
     # Configure run
-    init_seeds()
+    init_seeds(0)
     data_dict = parse_data_cfg(data)
     train_path = data_dict['train']
     test_path = data_dict['valid']
@@ -149,15 +149,15 @@ def train(hyp):
     elif len(weights) > 0:  # darknet format
         # possible weights are '*.weights', 'yolov3-tiny.conv.15',  'darknet53.conv.74' etc.
         load_darknet_weights(model, weights)
-    
-    if opt.freeze_layers:                                                                                                                                                            
-        output_layer_indices = [idx - 1 for idx, module in enumerate(model.module_list) if isinstance(module, YOLOLayer)]                                                                                                                      
-        freeze_layer_indices = [x for x in range(len(model.module_list)) if                                                                                                         
-                                (x not in output_layer_indices) and                                                                                                               
-                                (x - 1 not in output_layer_indices)]                                                                                                                 
-        for idx in freeze_layer_indices:                                                                                                                                             
-            for parameter in model.module_list[idx].parameters():                                                                                                                    
-                parameter.requires_grad_(False)                                                                                                                                      
+
+    if opt.freeze_layers:
+        output_layer_indices = [idx - 1 for idx, module in enumerate(model.module_list) if isinstance(module, YOLOLayer)]
+        freeze_layer_indices = [x for x in range(len(model.module_list)) if
+                                (x not in output_layer_indices) and
+                                (x - 1 not in output_layer_indices)]
+        for idx in freeze_layer_indices:
+            for parameter in model.module_list[idx].parameters():
+                parameter.requires_grad_(False)
 
     # Mixed precision training https://github.com/NVIDIA/apex
     if mixed_precision:
@@ -186,12 +186,12 @@ def train(hyp):
                                 init_method='tcp://127.0.0.1:9999',  # distributed training init method
                                 world_size=1,  # number of nodes for distributed training
                                 rank=0)  # distributed training node rank
-        model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
+       # model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
         model.yolo_layers = model.module.yolo_layers  # move yolo layer indices to top level
 
     # Dataset
     dataset = LoadImagesAndLabels(train_path, img_size, batch_size,
-                                  augment=True,
+                                  augment=False,
                                   hyp=hyp,  # augmentation hyperparameters
                                   rect=opt.rect,  # rectangular training
                                   cache_images=opt.cache_images,
@@ -274,10 +274,10 @@ def train(hyp):
                 if sf != 1:
                     ns = [math.ceil(x * sf / gs) * gs for x in imgs.shape[2:]]  # new shape (stretched to 32-multiple)
                     imgs = F.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
-
             # Forward
             pred = model(imgs)
-
+            #if opt.debug:
+            #    torch.save(pred_out, opt.debug)
             # Loss
             loss, loss_items = compute_loss(pred, targets, model)
             if not torch.isfinite(loss):
@@ -313,7 +313,6 @@ def train(hyp):
                     # tb_writer.add_graph(model, imgs)  # add model to tensorboard
 
             # end batch ------------------------------------------------------------------------------------------------
-
         # Update scheduler
         scheduler.step()
 
@@ -367,7 +366,19 @@ def train(hyp):
                 torch.save(ckpt, best)
             del ckpt
 
-        # end epoch ----------------------------------------------------------------------------------------------------
+        # end epoch ---------------------------------------------------------------------------------------------------
+    if opt.debug:
+        for i, (imgs, targets, paths, _) in enumerate(dataloader):
+            imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
+            print(type(imgs))
+            print(imgs.shape)
+            model.eval()
+            targets = targets.to(device)
+            inf_out, train_out, intermediate_output = model(imgs)
+            torch.save(intermediate_output[0], opt.debug)
+            break
+
+
     # end training
 
     n = opt.name
@@ -409,7 +420,8 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1 or cpu)')
     parser.add_argument('--adam', action='store_true', help='use adam optimizer')
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
-    parser.add_argument('--freeze-layers', action='store_true', help='Freeze non-output layers')  
+    parser.add_argument('--freeze-layers', action='store_true', help='Freeze non-output layers')
+    parser.add_argument('--debug', type=str, help='File to dump output')
     opt = parser.parse_args()
     opt.weights = last if opt.resume else opt.weights
     check_git_status()
