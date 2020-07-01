@@ -7,15 +7,15 @@ import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
 import torch.nn.functional as F
-
+import numpy as np
 
 def init_seeds(seed=0):
     torch.manual_seed(seed)
-
+    np.random.seed(seed)
     # Reduce randomness (may be slower on Tesla GPUs) # https://pytorch.org/docs/stable/notes/randomness.html
     if seed == 0:
-        cudnn.deterministic = False
-        cudnn.benchmark = True
+        cudnn.deterministic = True
+        cudnn.benchmark = False
 
 
 def select_device(device='', apex=False, batch_size=None):

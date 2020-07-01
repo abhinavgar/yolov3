@@ -62,6 +62,7 @@ def train(hyp):
     accumulate = max(round(64 / batch_size), 1)  # accumulate n times before optimizer update (bs 64)
     weights = opt.weights  # initial training weights
     imgsz_min, imgsz_max, imgsz_test = opt.img_size  # img sizes (min, max, test)
+    needs_debug = True
 
     # Image Sizes
     gs = 32  # (pixels) grid size
@@ -76,7 +77,7 @@ def train(hyp):
     img_size = imgsz_max  # initialize with max size
 
     # Configure run
-    init_seeds()
+    init_seeds(0)
     data_dict = parse_data_cfg(data)
     train_path = data_dict['train']
     test_path = data_dict['valid']
@@ -149,15 +150,15 @@ def train(hyp):
     elif len(weights) > 0:  # darknet format
         # possible weights are '*.weights', 'yolov3-tiny.conv.15',  'darknet53.conv.74' etc.
         load_darknet_weights(model, weights)
-    
-    if opt.freeze_layers:                                                                                                                                                            
-        output_layer_indices = [idx - 1 for idx, module in enumerate(model.module_list) if isinstance(module, YOLOLayer)]                                                                                                                      
-        freeze_layer_indices = [x for x in range(len(model.module_list)) if                                                                                                         
-                                (x not in output_layer_indices) and                                                                                                               
-                                (x - 1 not in output_layer_indices)]                                                                                                                 
-        for idx in freeze_layer_indices:                                                                                                                                             
-            for parameter in model.module_list[idx].parameters():                                                                                                                    
-                parameter.requires_grad_(False)                                                                                                                                      
+
+    if opt.freeze_layers:
+        output_layer_indices = [idx - 1 for idx, module in enumerate(model.module_list) if isinstance(module, YOLOLayer)]
+        freeze_layer_indices = [x for x in range(len(model.module_list)) if
+                                (x not in output_layer_indices) and
+                                (x - 1 not in output_layer_indices)]
+        for idx in freeze_layer_indices:
+            for parameter in model.module_list[idx].parameters():
+                parameter.requires_grad_(False)
 
     # Mixed precision training https://github.com/NVIDIA/apex
     if mixed_precision:
@@ -186,7 +187,7 @@ def train(hyp):
                                 init_method='tcp://127.0.0.1:9999',  # distributed training init method
                                 world_size=1,  # number of nodes for distributed training
                                 rank=0)  # distributed training node rank
-        model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
+        #model = torch.nn.parallel.DistributedDataParallel(model, find_unused_parameters=True)
         model.yolo_layers = model.module.yolo_layers  # move yolo layer indices to top level
 
     # Dataset
@@ -277,6 +278,12 @@ def train(hyp):
 
             # Forward
             pred = model(imgs)
+
+            if needs_debug:
+                if opt.debug:
+                    # saving one output is enough
+                    torch.save(pred[0], opt.debug)
+                needs_debug = False
 
             # Loss
             loss, loss_items = compute_loss(pred, targets, model)
@@ -409,7 +416,8 @@ if __name__ == '__main__':
     parser.add_argument('--device', default='', help='device id (i.e. 0 or 0,1 or cpu)')
     parser.add_argument('--adam', action='store_true', help='use adam optimizer')
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
-    parser.add_argument('--freeze-layers', action='store_true', help='Freeze non-output layers')  
+    parser.add_argument('--freeze-layers', action='store_true', help='Freeze non-output layers')
+    parser.add_argument('--debug', type=str, help='Location to dump output')
     opt = parser.parse_args()
     opt.weights = last if opt.resume else opt.weights
     check_git_status()
