@@ -63,6 +63,7 @@ def train(hyp):
     weights = opt.weights  # initial training weights
     imgsz_min, imgsz_max, imgsz_test = opt.img_size  # img sizes (min, max, test)
 
+    trace_done = False
     # Image Sizes
     gs = 32  # (pixels) grid size
     assert math.fmod(imgsz_min, gs) == 0, '--img-size %g must be a %g-multiple' % (imgsz_min, gs)
@@ -253,6 +254,10 @@ def train(hyp):
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
             targets = targets.to(device)
+
+            if not trace_done:
+                model = torch.jit.trace(model, (imgs), check_trace=False)
+                trace_done = True
 
             # Burn-in
             if ni <= n_burn:
